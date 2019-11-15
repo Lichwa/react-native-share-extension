@@ -104,9 +104,8 @@ NSString * _generateFilePath(NSString * ext, NSString * outputPath)
 
     CFDictionaryRef options = (__bridge CFDictionaryRef)[NSDictionary dictionaryWithObjectsAndKeys:
         (id)kCFBooleanTrue, (id)kCGImageSourceCreateThumbnailWithTransform,
-        (id)kCFBooleanTrue, (id)kCGImageSourceCreateThumbnailFromImageIfAbsent,
-        (id)@1000,
-        (id)kCGImageSourceThumbnailMaxPixelSize,
+        (id)kCFBooleanTrue, (id)kCGImageSourceCreateThumbnailFromImageAlways,
+        [NSNumber numberWithInt:1024], (id)kCGImageSourceThumbnailMaxPixelSize,
         nil];
     CGImageRef imgRef = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options);
 
