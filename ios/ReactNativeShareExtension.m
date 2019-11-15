@@ -1,5 +1,6 @@
 #import "ReactNativeShareExtension.h"
 #import "React/RCTRootView.h"
+#import <React/RCTImageLoader.h>
 #import <MobileCoreServices/MobileCoreServices.h>
 
 #define URL_IDENTIFIER @"public.url"
@@ -7,12 +8,12 @@
 #define TEXT_IDENTIFIER (NSString *)kUTTypePlainText
 
 NSExtensionContext* extensionContext;
+static NSString* type;
+static NSString* value;
 
-@implementation ReactNativeShareExtension {
-    NSTimer *autoTimer;
-    NSString* type;
-    NSString* value;
-}
+@implementation ReactNativeShareExtension
+
+@synthesize bridge = _bridge;
 
 - (UIView*) shareView {
     return nil;
@@ -22,17 +23,17 @@ RCT_EXPORT_MODULE();
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-
+    
     //object variable for extension doesn't work for react-native. It must be assign to gloabl
     //variable extensionContext. in this way, both exported method can touch extensionContext
     extensionContext = self.extensionContext;
-
-    UIView *rootView = [self shareView];
-    if (rootView.backgroundColor == nil) {
-        rootView.backgroundColor = [[UIColor alloc] initWithRed:1 green:1 blue:1 alpha:0.1];
-    }
-
-    self.view = rootView;
+    
+    [self extractDataFromContext: extensionContext withCallback:^(NSString* val, NSString* contentType, NSException* err) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIView *rootView = [self shareView];
+            self.view = rootView;
+        });
+    }];
 }
 
 
@@ -41,30 +42,85 @@ RCT_EXPORT_METHOD(close) {
                                   completionHandler:nil];
 }
 
-
-
-RCT_EXPORT_METHOD(openURL:(NSString *)url) {
-  UIApplication *application = [UIApplication sharedApplication];
-  NSURL *urlToOpen = [NSURL URLWithString:[url stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding]];
-  [application openURL:urlToOpen options:@{} completionHandler: nil];
-}
-
-
-
 RCT_REMAP_METHOD(data,
                  resolver:(RCTPromiseResolveBlock)resolve
                  rejecter:(RCTPromiseRejectBlock)reject)
 {
-    [self extractDataFromContext: extensionContext withCallback:^(NSString* val, NSString* contentType, NSException* err) {
-        if(err) {
-            reject(@"error", err.description, nil);
+    resolve(@{
+        @"type": type,
+        @"value": value
+    });
+}
+
+bool _saveImage(NSString * fullPath, UIImage * image)
+{
+    NSData* data = UIImageJPEGRepresentation(image, 0.9);
+    
+    if (data == nil) {
+        return NO;
+    }
+    
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    return [fileManager createFileAtPath:fullPath contents:data attributes:nil];
+}
+
+NSString * _generateFilePath(NSString * ext, NSString * outputPath)
+{
+    NSString* directory;
+
+    if ([outputPath length] == 0) {
+        NSArray* paths = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES);
+        directory = [paths firstObject];
+    } else {
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *documentsDirectory = [paths objectAtIndex:0];
+        if ([outputPath hasPrefix:documentsDirectory]) {
+            directory = outputPath;
         } else {
-            resolve(@{
-                      @"type": contentType,
-                      @"value": val
-                      });
+            directory = [documentsDirectory stringByAppendingPathComponent:outputPath];
         }
-    }];
+        
+        NSError *error;
+        [[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error];
+        if (error) {
+            NSLog(@"Error creating documents subdirectory: %@", error);
+            @throw [NSException exceptionWithName:@"InvalidPathException" reason:[NSString stringWithFormat:@"Error creating documents subdirectory: %@", error] userInfo:nil];
+        }
+    }
+
+    NSString* name = [[NSUUID UUID] UUIDString];
+    NSString* fullName = [NSString stringWithFormat:@"%@.%@", name, ext];
+    NSString* fullPath = [directory stringByAppendingPathComponent:fullName];
+
+    return fullPath;
+}
+
+- (NSURL*)createResizedImage:(NSString *)path
+{
+    NSString *extension = @"jpg";
+    NSURL* url = [NSURL URLWithString:path];
+    CFURLRef cfurl = (__bridge CFURLRef)url;
+    CGImageSourceRef imageSource = CGImageSourceCreateWithURL(cfurl, NULL);
+
+    CFDictionaryRef options = (__bridge CFDictionaryRef)[NSDictionary dictionaryWithObjectsAndKeys:
+        (id)kCFBooleanTrue, (id)kCGImageSourceCreateThumbnailWithTransform,
+        (id)kCFBooleanTrue, (id)kCGImageSourceCreateThumbnailFromImageIfAbsent,
+        (id)@1000,
+        (id)kCGImageSourceThumbnailMaxPixelSize,
+        nil];
+    CGImageRef imgRef = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options);
+
+    UIImage* scaled = [UIImage imageWithCGImage:imgRef];
+
+    CGImageRelease(imgRef);
+    CFRelease(imageSource);
+    
+    NSString* fullPath;
+    fullPath = _generateFilePath(extension, nil);
+    _saveImage(fullPath, scaled);
+    NSURL *fileUrl = [[NSURL alloc] initFileURLWithPath:fullPath];
+
+    return fileUrl;
 }
 
 - (void)extractDataFromContext:(NSExtensionContext *)context withCallback:(void(^)(NSString *value, NSString* contentType, NSException *exception))callback {
@@ -102,7 +158,10 @@ RCT_REMAP_METHOD(data,
                 NSURL *url = (NSURL *)item;
 
                 if(callback) {
-                    callback([url absoluteString], [[[url absoluteString] pathExtension] lowercaseString], nil);
+                    NSURL* fileUrl = [self createResizedImage: url.absoluteString];
+                    value = [fileUrl absoluteString];
+                    type = [[[fileUrl absoluteString] pathExtension] lowercaseString];
+                    callback(value, type, nil);
                 }
             }];
         } else if (textProvider) {

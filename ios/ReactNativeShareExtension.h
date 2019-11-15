@@ -3,4 +3,6 @@
 
 @interface ReactNativeShareExtension : UIViewController<RCTBridgeModule>
 - (UIView*) shareView;
++ (NSString*) type;
++ (NSString*) value;
 @end
