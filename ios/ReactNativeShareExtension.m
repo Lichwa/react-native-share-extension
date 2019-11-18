@@ -1,6 +1,7 @@
 #import "ReactNativeShareExtension.h"
 #import "React/RCTRootView.h"
 #import <React/RCTImageLoader.h>
+#import <React/RCTBundleURLProvider.h>
 #import <MobileCoreServices/MobileCoreServices.h>
 
 #define URL_IDENTIFIER @"public.url"
@@ -10,6 +11,10 @@
 NSExtensionContext* extensionContext;
 static NSString* type;
 static NSString* value;
+
+// Save a copy of the RCTBridge to reuse. Creating a new bridge
+// each time this saves mempory.
+RCTBridge *sharedBridge;
 
 @implementation ReactNativeShareExtension
 
@@ -21,17 +26,25 @@ static NSString* value;
 
 RCT_EXPORT_MODULE();
 
+- (RCTBridge*) createBridge {
+    return nil;
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    //object variable for extension doesn't work for react-native. It must be assign to gloabl
-    //variable extensionContext. in this way, both exported method can touch extensionContext
     extensionContext = self.extensionContext;
     
     [self extractDataFromContext: extensionContext withCallback:^(NSString* val, NSString* contentType, NSException* err) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            UIView *rootView = [self shareView];
-            self.view = rootView;
+            if (sharedBridge) {
+                [sharedBridge invalidate];
+                sharedBridge = nil;
+            }
+
+            sharedBridge = [self createBridge];
+
+            self.view = [self shareView:sharedBridge];
         });
     }];
 }
@@ -40,6 +53,9 @@ RCT_EXPORT_MODULE();
 RCT_EXPORT_METHOD(close) {
     [extensionContext completeRequestReturningItems:nil
                                   completionHandler:nil];
+    [sharedBridge invalidate];
+    sharedBridge = nil;
+    self.view = nil;
 }
 
 RCT_REMAP_METHOD(data,
