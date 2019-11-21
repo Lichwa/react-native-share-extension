@@ -163,28 +163,35 @@ NSString * _generateFilePath(NSString * ext, NSString * outputPath)
         if(urlProvider) {
             [urlProvider loadItemForTypeIdentifier:URL_IDENTIFIER options:nil completionHandler:^(id<NSSecureCoding> item, NSError *error) {
                 NSURL *url = (NSURL *)item;
+                
+                value = [url absoluteString];
+                type = @"text/url";
 
                 if(callback) {
-                    callback([url absoluteString], @"text/plain", nil);
+                    callback(value, type, nil);
                 }
             }];
         } else if (imageProvider) {
             [imageProvider loadItemForTypeIdentifier:IMAGE_IDENTIFIER options:nil completionHandler:^(id<NSSecureCoding> item, NSError *error) {
                 NSURL *url = (NSURL *)item;
-
+                NSURL* fileUrl = [self createResizedImage: url.absoluteString];
+                
+                value = [fileUrl absoluteString];
+                type = [[[fileUrl absoluteString] pathExtension] lowercaseString];
+                
                 if(callback) {
-                    NSURL* fileUrl = [self createResizedImage: url.absoluteString];
-                    value = [fileUrl absoluteString];
-                    type = [[[fileUrl absoluteString] pathExtension] lowercaseString];
                     callback(value, type, nil);
                 }
             }];
         } else if (textProvider) {
             [textProvider loadItemForTypeIdentifier:TEXT_IDENTIFIER options:nil completionHandler:^(id<NSSecureCoding> item, NSError *error) {
                 NSString *text = (NSString *)item;
+                
+                value = text;
+                type = @"text/plain";
 
                 if(callback) {
-                    callback(text, @"text/plain", nil);
+                    callback(value, type, nil);
                 }
             }];
         } else {
